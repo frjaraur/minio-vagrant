@@ -25,6 +25,12 @@ shared_mount=config['environment']['shared_mount']
 boxes_hostsfile_entries=""
 boxes_minio_server_entries=""
 
+
+## MINIO
+minio_access_key=config['environment']['minio_access_key']
+minio_secret_key=config['environment']['minio_secret_key']
+
+
 boxes.each do |box|
    boxes_hostsfile_entries=boxes_hostsfile_entries+box['mgmt_ip'] + ' ' +  box['name'] + ' ' + box['name']+'.'+domain+'\n'
 end
@@ -87,8 +93,8 @@ SCRIPT
 # Must refactor but now it works :|
 start_minion_containers = <<SCRIPT
  docker run --name minio -d \
- -e MINIO_ACCESS_KEY=MINIO-ACCESS-KEY \
- -e MINIO_SECRET_KEY=MINIO.SECRET-KEY \
+ -e MINIO_ACCESS_KEY=#{minio_access_key} \
+ -e MINIO_SECRET_KEY=#{minio_secret_key} \
  --net=host minio/minio server \
  http://minio-1/data \
  http://minio-2/data \
