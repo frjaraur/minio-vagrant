@@ -1,27 +1,23 @@
 #!/bin/bash -x
 
-IP=$1
+SWARMIP=$1
 
-MASTER_IP=$2
+SWARMROLE=$2
 
+SWARMMASTER_IP=$3
+
+#DOWNLOAD_URL=$4
 
 #SHARED Between Nodes..
 TMPSHARED="/tmp_deploying_stage"
 #Docker Multi Daemon
 
-
-VAGRANT_USER=ubuntu
-VAGRANT_GROUP=ubuntu
-HOME_VAGRANT_USER=/home/ubuntu
-
-INIT_CLUSTER=0
-
 # DEFAULTS
 
-#DOCKER_ROOTDIR="${DOCKER_ROOTDIR:=/var/lib/docker}"
-#DOCKER_RUNDIR="${DOCKER_RUNDIR:=/var/run}"
-#DOCKER_CONFIGDIR="${DOCKER_CONFIGDIR:=/etc/docker}"
-#DOCKER_LOGDIR="${DOCKER_LOGDIR:=/var/log/docker}"
+DOCKER_ROOTDIR="${DOCKER_ROOTDIR:=/var/lib/docker}"
+DOCKER_RUNDIR="${DOCKER_RUNDIR:=/var/run}"
+DOCKER_CONFIGDIR="${DOCKER_CONFIGDIR:=/etc/docker}"
+DOCKER_LOGDIR="${DOCKER_LOGDIR:=/var/log/docker}"
 
 ErrorMessage(){
   echo "$(date +%Y/%m/%d-%H:%M:%S) ERROR: $*"
@@ -33,38 +29,43 @@ InfoMessage(){
 }
 
 
-#USER="vagrant"
-#[ $(grep -c "${USER}" /etc/passwd) -ne 1 ] && USER="ubuntu"
+# USER="vagrant"
+# [ $(grep -c "${USER}" /etc/passwd) -ne 1 ] && USER="ubuntu"
 
 
-# Calico https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml \
+# if ! dpkg -l docker >/dev/null 2>&1
+# then
+#   #Install Engine (This way, we can reprovision)
+#   InfoMessage "Installing Docker"
+#   apt-get install -qq curl \
+#   && curl -sSk ${DOWNLOAD_URL} | sh \
+#   && usermod -aG docker ${USER}
+# fi
 
-[ ! -f ${TMPSHARED}/token  -a "${IP}" == "${MASTER_IP}" ] && INIT_CLUSTER=1
+#DOCKER_DAEMON="docker -H ${SWARMIP}:2375"
+InfoMessage "SWARM MODE ROLE [${SWARMROLE}]"
 
-if [ ${INIT_CLUSTER} -eq 1 ]
-then
-    InfoMessage "Initiating Cluster" \
-    && echo $(sudo kubeadm token generate) > ${TMPSHARED}/token \
-    && kubeadm init  --token $(cat ${TMPSHARED}/token) --apiserver-advertise-address ${IP}  \
-    --service-dns-domain "k8s"  \
-    --pod-network-cidr=192.168.0.0/16 \
-    --skip-preflight-checks
-fi
 
-mkdir -p $HOME/.kube \
-&& mkdir -p $HOME_VAGRANT_USER/.kube \
-&& cp -i /etc/kubernetes/admin.conf $HOME/.kube/config \
-&& cp -i /etc/kubernetes/admin.conf $HOME_VAGRANT_USER/.kube/config \
-&& chown -R $(id -u):$(id -g) $HOME/.kube \
-&& chown -R ${VAGRANT_USER}:${VAGRANT_GROUP} $HOME_VAGRANT_USER/.kube
+case ${SWARMROLE} in
+  manager)
+    [ ! -f ${TMPSHARED}/manager.token ] && InfoMessage "Initiating Swarm Cluster" \
+    && docker swarm init --advertise-addr ${SWARMIP} --listen-addr  ${SWARMIP} \
+    && docker swarm join-token manager -q > ${TMPSHARED}/manager.token \
+    && docker swarm join-token worker -q > ${TMPSHARED}/worker.token \
+    && touch ${TMPSHARED}/$(hostname).provisioned \
+    && exit
 
-if [ ${INIT_CLUSTER} -eq 1 ] 
-then
-    kubectl apply -f https://docs.projectcalico.org/v2.6/getting-started/kubernetes/installation/hosted/kubeadm/1.6/calico.yaml
-    exit
-fi
+    [ -f ${TMPSHARED}/manager.token  -a ! -f ${TMPSHARED}/$(hostname).provisioned ] && InfoMessage "Joining Swarm Cluster" \
+    && docker swarm join ${SWARMMASTER_IP}:2377 --advertise-addr ${SWARMIP}  --listen-addr  ${SWARMIP} \
+    --token $(cat ${TMPSHARED}/manager.token)
+    
 
-[ -f ${TMPSHARED}/token ] && InfoMessage "Joining Cluster" \
-&& kubeadm join  --token $(cat ${TMPSHARED}/token) ${MASTER_IP}:6443 \
---discovery-token-unsafe-skip-ca-verification \
-&& exit 
+  ;;
+
+  worker)
+    docker swarm join ${SWARMMASTER_IP}:2377 --advertise-addr ${SWARMIP}  --listen-addr  ${SWARMIP} \
+    --token $(cat ${TMPSHARED}/worker.token)
+
+  ;;
+
+esac

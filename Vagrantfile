@@ -11,19 +11,23 @@ config = YAML.load_file(File.join(File.dirname(__FILE__), 'config.yml'))
 
 base_box=config['environment']['base_box']
 
-master_ip=config['environment']['masterip']
+start_minion_containers=""
+
+swarm_master_ip=config['environment']['masterip']
 
 domain=config['environment']['domain']
 
 engine_version=domain=config['environment']['engine_version']
 
 boxes = config['boxes']
+shared_mount=config['environment']['shared_mount']
 
 boxes_hostsfile_entries=""
+boxes_minio_server_entries=""
 
- boxes.each do |box|
+boxes.each do |box|
    boxes_hostsfile_entries=boxes_hostsfile_entries+box['mgmt_ip'] + ' ' +  box['name'] + ' ' + box['name']+'.'+domain+'\n'
- end
+end
 
 #puts boxes_hostsfile_entries
 
@@ -51,6 +55,10 @@ $install_docker_engine = <<SCRIPT
   usermod -aG docker ubuntu 2>/dev/null
 SCRIPT
 
+boxes.each do |box|
+   boxes_minio_server_entries=boxes_minio_server_entries+'http://'+box['mgmt_ip'] + shared_mount + ' '
+end
+
 install_minio = <<SCRIPT
  curl -o /usr/local/bin/minio -sSL https://dl.minio.io/server/minio/release/linux-amd64/minio
  curl -o /usr/local/bin/mc -sSL https://dl.minio.io/client/mc/release/linux-amd64/mc
@@ -59,18 +67,33 @@ install_minio = <<SCRIPT
  #Fix error for ubuntu
  #sed -i "s/defaults/default/g" /etc/systemd/system/minio.service
  grep -v ExecStartPre /etc/systemd/system/minio.service.tmp >/etc/systemd/system/minio.service
- printf "MINIO_VOLUMES=\"mnt/data\"\nMINIO_OPTS=\"address :9199\"\nMINIO_ACCESS_KEY=MINIO-ACCESS-KEY\nMINIO_SECRET_KEY=MINIO-SECRET-KEY"| tee -a /etc/default/minio
+ echo "MINIO_VOLUMES=\"#{boxes_minio_server_entries}\""| tee -a /etc/default/minio
+ echo "MINIO_ACCESS_KEY=MINIO-ACCESS-KEY"| tee -a /etc/default/minio
+ echo "MINIO_SECRET_KEY=MINIO-SECRET-KEY"| tee -a /etc/default/minio
  useradd -m -s /sbin/nologin minio-user
  systemctl daemon-reload
- systemctl enable minio.service
- systemctl start minio.service
+ #systemctl enable minio.service
+ #systemctl start minio.service
 SCRIPT
 
 prepare_disk = <<SCRIPT
  mkdir /mnt/data
  mkfs.ext4 -F /dev/sdc
- mount /dev/sdc /mnt/data
- chmod 777 /mnt/data
+ mount /dev/sdc #{shared_mount}
+ chmod 777  #{shared_mount}
+SCRIPT
+
+
+# Must refactor but now it works :|
+start_minion_containers = <<SCRIPT
+ docker run --name minio -d \
+ -e MINIO_ACCESS_KEY=MINIO-ACCESS-KEY \
+ -e MINIO_SECRET_KEY=MINIO.SECRET-KEY \
+ --net=host minio/minio server \
+ http://minio-1/data \
+ http://minio-2/data \
+ http://minio-3/data \
+ http://minio-4/data
 SCRIPT
 
 
@@ -83,11 +106,10 @@ Vagrant.configure(2) do |config|
       config.vm.hostname = node['name']
       config.vm.provider "virtualbox" do |v|
         config.ssh.shell = "bash -c 'BASH_ENV=/etc/profile exec bash'"       
-	    v.customize [ "modifyvm", :id, "--uartmode1", "disconnected" ]
+	v.customize [ "modifyvm", :id, "--uartmode1", "disconnected" ]
         v.name = node['name']
         v.customize ["modifyvm", :id, "--memory", node['mem']]
         v.customize ["modifyvm", :id, "--cpus", node['cpu']]
-
         v.customize ["modifyvm", :id, "--nictype1", "Am79C973"]
         v.customize ["modifyvm", :id, "--nictype2", "Am79C973"]
         v.customize ["modifyvm", :id, "--nictype3", "Am79C973"]
@@ -110,8 +132,6 @@ Vagrant.configure(2) do |config|
           v.gui = true
           v.customize ["modifyvm", :id, "--vram", "64"]
         end
-
-
       end
 
       config.vm.network "private_network",
@@ -119,11 +139,11 @@ Vagrant.configure(2) do |config|
       virtualbox__intnet: "LABS"
 
 
-      config.vm.network "forwarded_port", guest: 8080, host: 8080, auto_correct: true
+      config.vm.network "forwarded_port", guest: 9000, host: 9000, auto_correct: true
 
-      config.vm.network "public_network",
-      bridge: ["enp4s0","wlp3s0","enp3s0f1","wlp2s0"],
-      auto_config: true
+      #config.vm.network "public_network",
+      #bridge: ["enp4s0","wlp3s0","enp3s0f1","wlp2s0"],
+      #auto_config: true
 
       config.vm.provision "shell", inline: <<-SHELL
         sudo apt-get update -qq && apt-get install -qq ntpdate ntp && timedatectl set-timezone Europe/Madrid
@@ -165,12 +185,12 @@ Vagrant.configure(2) do |config|
            	s.args       = engine_version
       end
 
-
       config.vm.provision :shell, :inline => install_minio
 
+      config.vm.provision "file", source: "create_cluster.sh", destination: "/tmp/create_cluster.sh"
+      config.vm.provision :shell, :path => 'create_cluster.sh' , :args => [ node['mgmt_ip'], node['role'], swarm_master_ip ]
 
-#      config.vm.provision "file", source: "create_cluster.sh", destination: "/tmp/create_cluster.sh"
-#      config.vm.provision :shell, :path => 'create_cluster.sh' , :args => [ node['mgmt_ip'], master_ip ]
+      config.vm.provision :shell, :inline => start_minion_containers
 
     end
   end

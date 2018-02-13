@@ -1,6 +1,7 @@
 destroy:
 	@vagrant destroy -f
 	@rm -rf tmp_deploying_stage
+	@rm -rf *.vdi
 
 create:
 	@vagrant up -d
