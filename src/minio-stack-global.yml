@@ -1,0 +1,52 @@
+version: '3.2'
+
+services:
+  minio:
+    image: minio/minio
+    ports:
+      - "9001:9000"
+    networks:
+      minio_distributed:
+        aliases:
+          - {{.Node.Hostname}}
+          
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.label.as_storagebackend == s3
+      restart_policy:
+        delay: 10s
+        max_attempts: 10
+        window: 60s
+    command: server http://minio-1/data http://minio-2/data http://minio-3/data http://minio-4/data
+    secrets:
+      - secret_key
+      - access_key
+    volumes:
+      - type: bind
+        source: /mnt/data
+        target: /data
+
+  nginx-minio:
+    image: frjaraur/minio:nginx
+    ports:
+      - "9000:9000"
+    networks:
+      - minio_distributed
+    deploy:
+      restart_policy:
+        delay: 10s
+        max_attempts: 10
+        window: 60s
+
+
+networks:
+  minio_distributed:
+    driver: overlay
+
+secrets:
+  secret_key:
+    external: true
+  access_key:
+    external: true

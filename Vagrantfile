@@ -83,8 +83,8 @@ install_minio = <<SCRIPT
 SCRIPT
 
 prepare_disk = <<SCRIPT
- mkdir /mnt/data
- mkfs.ext4 -F /dev/sdc
+ mkdir -p #{shared_mount}
+ mkfs.xfs -f /dev/sdc
  mount /dev/sdc #{shared_mount}
  chmod 777  #{shared_mount}
 SCRIPT
@@ -95,7 +95,9 @@ start_minion_containers = <<SCRIPT
  docker run --name minio -d \
  -e MINIO_ACCESS_KEY=#{minio_access_key} \
  -e MINIO_SECRET_KEY=#{minio_secret_key} \
- --net=host minio/minio server \
+ -v /mnt/data:/data \
+ --net=host \
+ minio/minio server \
  http://minio-1/data \
  http://minio-2/data \
  http://minio-3/data \
@@ -196,7 +198,7 @@ Vagrant.configure(2) do |config|
       config.vm.provision "file", source: "create_cluster.sh", destination: "/tmp/create_cluster.sh"
       config.vm.provision :shell, :path => 'create_cluster.sh' , :args => [ node['mgmt_ip'], node['role'], swarm_master_ip ]
 
-      config.vm.provision :shell, :inline => start_minion_containers
+#      config.vm.provision :shell, :inline => start_minion_containers
 
     end
   end

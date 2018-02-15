@@ -2,7 +2,7 @@ version: '3.2'
 
 services:
   minio-1:
-    image: minio/minio:RELEASE.2018-02-09T22-40-05Z
+    image: minio/minio
     ports:
       - "9001:9000"
     networks:
@@ -15,17 +15,17 @@ services:
         delay: 10s
         max_attempts: 10
         window: 60s
-    command: server http://minio-1/export http://minio-2/export http://minio-3/export http://minio-4/export
+    command: server http://minio-1/data http://minio-2/data http://minio-3/data http://minio-4/data
     secrets:
       - secret_key
       - access_key
     volumes:
       - type: bind
         source: /mnt/data
-        target: /export
+        target: /data
 
   minio-2:
-    image: minio/minio:RELEASE.2018-02-09T22-40-05Z
+    image: minio/minio
     ports:
       - "9002:9000"
     networks:
@@ -38,17 +38,17 @@ services:
         delay: 10s
         max_attempts: 10
         window: 60s
-    command: server http://minio-1/export http://minio-2/export http://minio-3/export http://minio-4/export
+    command: server http://minio-1/data http://minio-2/data http://minio-3/data http://minio-4/data
     secrets:
       - secret_key
       - access_key
     volumes:
       - type: bind
         source: /mnt/data
-        target: /export
+        target: /data
 
   minio-3:
-    image: minio/minio:RELEASE.2018-02-09T22-40-05Z
+    image: minio/minio
     ports:
       - "9003:9000"
     networks:
@@ -61,17 +61,17 @@ services:
         delay: 10s
         max_attempts: 10
         window: 60s
-    command: server http://minio-1/export http://minio-2/export http://minio-3/export http://minio-4/export
+    command: server http://minio-1/data http://minio-2/data http://minio-3/data http://minio-4/data
     secrets:
       - secret_key
       - access_key
     volumes:
       - type: bind
         source: /mnt/data
-        target: /export
+        target: /data
 
   minio-4:
-    image: minio/minio:RELEASE.2018-02-09T22-40-05Z
+    image: minio/minio
     ports:
       - "9004:9000"
     networks:
@@ -84,14 +84,26 @@ services:
         delay: 10s
         max_attempts: 10
         window: 60s
-    command: server http://minio-1/export http://minio-2/export http://minio-3/export http://minio-4/export
+    command: server http://minio-1/data http://minio-2/data http://minio-3/data http://minio-4/data
     secrets:
       - secret_key
       - access_key
     volumes:
       - type: bind
         source: /mnt/data
-        target: /export
+        target: /data
+
+  nginx-minio:
+    image: frjaraur/minio:nginx
+    ports:
+      - "9000:9000"
+    networks:
+      - minio_distributed
+    deploy:
+      restart_policy:
+        delay: 10s
+        max_attempts: 10
+        window: 60s
 
 
 networks:
